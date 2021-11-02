@@ -1,0 +1,135 @@
+<?php
+/**
+ * --------------------------------------------------------
+ * Circle Interactive
+ * --------------------------------------------------------
+ * @author Raymond Angana <raymond@circle-interactive.co.uk>
+ * @package Circle Interactive
+ * @version 1.0.0
+ */
+
+
+function migrate_image_blocks_init() {
+  $is_migrate = $_SERVER['QUERY_STRING'];
+  if ($is_migrate == 'migrate=1') {
+    $yml = '';
+    $result = db_query('SELECT * FROM {imageblock} ORDER BY info');
+    $blocktheme_query = db_query("SELECT value FROM {variable} WHERE name = 'blocktheme'")->fetchObject();
+    $blocktheme = unserialize($blocktheme_query->value);
+    $d7_d9_block_theme_mapping = [
+      'hero-banner-image' => 'hero_banner_image_text_left',
+      'hero-banner-image-text-right' => 'hero_banner_image_text_right',
+      'hero-banner-video-poster' => 'hero_banner_video_poster_left',
+      'hero-banner-video-poster-text-right' => 'hero_banner_video_poster_right',
+      'text-with-image-right' => 'text_with_image_right',
+      'text-with-image-left' => 'text_with_image_left',
+      'two-columns' => 'two_columns',
+      'grey-block' => 'grey_block',
+      'title-block' => 'title_block',
+      'impact-stats-full-width' => 'impact_stats_full_width',
+      'impact-stats-half-width' => 'impact_stats_half_width',
+      'quote' => 'quote',
+    ];
+    $blocktypes_with_link_field = [
+      'hero_banner_image_text_left',
+      'hero_banner_image_text_right',
+      'hero_banner_video_poster_left',
+      'hero_banner_video_poster_right',
+      'text_with_image_left',
+      'text_with_image_right',
+    ];
+
+    foreach ($result as $block) {
+      $uri = file_load($block->fid)->uri;
+      $url = file_create_url($uri);
+      $data = unserialize($block->data);
+      $body = str_replace(["\r", "\n"], '', $block->body);
+      $img_fname = end(explode('/', $url));
+      $img_name = str_replace(['.png', '.jpg', '.jpeg'. '.gif'], '', $img_fname);
+      $img_alt = str_replace('"', '\"', $data['imageblock_alt']);
+      $blocktheme_id = $blocktheme['imageblock-' . $block->bid];
+
+      if (! is_null($blocktheme_id)) {
+        // Copy Image file.
+        migrate_copy_img($url, 'hw_contents/images/');
+
+        // Debug:
+        $blocks[] = [
+          'info' => $block->info,
+          'img' => $url,
+          'format' => $block->format,
+          'blocktheme' => $blocktheme_id,
+          'data' => $data,
+          'body' => $block->body,
+        ];
+        //var_dump($blocks);
+
+        $yml .= "- entity: \"block_content\"\r\n";
+        $yml .= "  type: \"{$d7_d9_block_theme_mapping[$blocktheme_id]}\"\r\n";
+        $yml .= "  info: \"{$block->info}\"\r\n";
+        $yml .= "  status: 1\r\n";
+        $yml .= "  body:\r\n";
+        $yml .= "    - format: \"{$block->format}\"\r\n";
+        $yml .= "      value: |\r\n";
+        $yml .= "        {$body}\r\n";
+        $yml .= "  field_image:\r\n";
+        $yml .= "    - entity: \"media\"\r\n";
+        $yml .= "      bundle: \"image\"\r\n";
+        $yml .= "      name: \"{$img_name}\"\r\n";
+        $yml .= "      status: 1\r\n";
+        $yml .= "      field_media_image:\r\n";
+        $yml .= "        - '#process':\r\n";
+        $yml .= "            callback: 'file'\r\n";
+        $yml .= "            args:\r\n";
+        $yml .= "              - 'image'\r\n";
+        $yml .= "              - filename: '{$img_fname}'\r\n";
+        $yml .= "          alt: \"{$img_alt}\"\r\n";
+
+        if (in_array($d7_d9_block_theme_mapping[$blocktheme_id], $blocktypes_with_link_field)
+          && isset($data['imageblock_link'])
+          && migrate_is_valid_url($data['imageblock_link'])) {
+            $yml .= "  field_link:\r\n";
+            $yml .= "    - uri: 'public://" . ltrim($data['imageblock_link'], '/'). "'\r\n";
+
+            $title = $data['imageblock_title'] ?? '';
+            $yml .= "      title: \"{$title}\"\r\n";
+
+            if ($data['imageblock_link_target'] != '_self') {
+              $yml .= "      options:\r\n";
+              $yml .= "        attributes:\r\n";
+              $yml .= "          target: '{$data['imageblock_link_target']}'\r\n";
+            }
+        }
+
+        $yml .= "\r\n";
+      }
+    }
+    migrate_write_yaml('hw_contents/content/imageblocks.content.yml', $yml);
+  }
+}
+
+function migrate_is_valid_url($path) {
+  if (!drupal_valid_path($path)) {
+    // Not a system URL.
+    if (!drupal_lookup_path('source', $path))  {
+      return FALSE;
+    }
+    else {
+      return TRUE;
+    }
+  }
+}
+
+function migrate_copy_img($url, $base_dir) {
+  $filename = end(explode('/', $url));
+  $imgpath = $base_dir . $filename;
+
+  if (! empty($filename)) {
+    touch($imgpath);
+    copy($url, $imgpath);
+  }
+}
+
+function migrate_write_yaml($path, $content) {
+  file_put_contents($path, $content);
+}

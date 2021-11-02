@@ -1,0 +1,4 @@
+name = "Migrate Image Blocks"
+description = "Migrate Image Blocks"
+core = 7.x
+package = Circle
