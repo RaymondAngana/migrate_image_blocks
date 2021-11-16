@@ -40,6 +40,7 @@ function migrate_image_blocks_init() {
     ];
 
     foreach ($result as $block) {
+      $bid = $block->bid;
       $uri = file_load($block->fid)->uri;
       $url = file_create_url($uri);
       $data = unserialize($block->data);
@@ -47,7 +48,8 @@ function migrate_image_blocks_init() {
       $img_fname = end(explode('/', $url));
       $img_name = str_replace(['.png', '.jpg', '.jpeg'. '.gif'], '', $img_fname);
       $img_alt = str_replace('"', '\"', $data['imageblock_alt']);
-      $blocktheme_id = $blocktheme['imageblock-' . $block->bid];
+      $blocktheme_id = $blocktheme['imageblock-' . $bid];
+      $region = db_query("SELECT region FROM {block} WHERE delta = '{$bid}' AND theme='bootstrap_healthwatch_wib_2018'")->fetchObject();
 
       if (! is_null($blocktheme_id)) {
         // Copy Image file.
@@ -59,6 +61,7 @@ function migrate_image_blocks_init() {
           'img' => $url,
           'format' => $block->format,
           'blocktheme' => $blocktheme_id,
+          'region' => $region->region,
           'data' => $data,
           'body' => $block->body,
         ];
@@ -72,6 +75,7 @@ function migrate_image_blocks_init() {
         $yml .= "    - format: \"{$block->format}\"\r\n";
         $yml .= "      value: |\r\n";
         $yml .= "        {$body}\r\n";
+        $yml .= "  field_region: \"" . $region->region . "\"\r\n";
         $yml .= "  field_image:\r\n";
         $yml .= "    - entity: \"media\"\r\n";
         $yml .= "      bundle: \"image\"\r\n";
