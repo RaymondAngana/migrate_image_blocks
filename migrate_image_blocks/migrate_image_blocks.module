@@ -8,8 +8,41 @@
  * @version 1.0.0
  */
 
+function generate_uuid() {
+    // Obtain a random string of 32 hex characters.
+    $hex = bin2hex(random_bytes(16));
 
+    // The variable names $time_low, $time_mid, $time_hi_and_version,
+    // $clock_seq_hi_and_reserved, $clock_seq_low, and $node correlate to
+    // the fields defined in RFC 4122 section 4.1.2.
+    //
+    // Use characters 0-11 to generate 32-bit $time_low and 16-bit $time_mid.
+    $time_low = substr($hex, 0, 8);
+    $time_mid = substr($hex, 8, 4);
+
+    // Use characters 12-15 to generate 16-bit $time_hi_and_version.
+    // The 4 most significant bits are the version number (0100 == 0x4).
+    // We simply skip character 12 from $hex, and concatenate the strings.
+    $time_hi_and_version = '4' . substr($hex, 13, 3);
+
+    // Use characters 16-17 to generate 8-bit $clock_seq_hi_and_reserved.
+    // The 2 most significant bits are set to one and zero respectively.
+    $clock_seq_hi_and_reserved = base_convert(substr($hex, 16, 2), 16, 10);
+    $clock_seq_hi_and_reserved &= 0b111111;
+    $clock_seq_hi_and_reserved |= 0b10000000;
+
+    // Use characters 18-19 to generate 8-bit $clock_seq_low.
+    $clock_seq_low = substr($hex, 18, 2);
+
+    // Use characters 20-31 to generate 48-bit $node.
+    $node = substr($hex, 20);
+
+    // Re-combine as a UUID. $clock_seq_hi_and_reserved is still an integer.
+    $uuid = sprintf('%s-%s-%s-%02x%s-%s', $time_low, $time_mid, $time_hi_and_version, $clock_seq_hi_and_reserved, $clock_seq_low, $node);
+    return $uuid;
+}
 function migrate_image_blocks_init() {
+  $nl = "\r\n";
   $is_migrate = $_SERVER['QUERY_STRING'];
   if ($is_migrate == 'migrate=1') {
     $yml = '';
@@ -39,6 +72,7 @@ function migrate_image_blocks_init() {
       'text_with_image_right',
     ];
 
+    $i = 1;
     foreach ($result as $block) {
       $bid = $block->bid;
       $uri = file_load($block->fid)->uri;
@@ -54,9 +88,11 @@ function migrate_image_blocks_init() {
       if (! is_null($blocktheme_id)) {
         // Copy Image file.
         migrate_copy_img($url, 'hw_contents/images/');
+        $uuid = generate_uuid();
 
         // Debug:
         $blocks[] = [
+          'uuid' => $uuid,
           'info' => $block->info,
           'img' => $url,
           'format' => $block->format,
@@ -65,47 +101,62 @@ function migrate_image_blocks_init() {
           'data' => $data,
           'body' => $block->body,
         ];
-        //var_dump($blocks);
+        var_dump($blocks);
 
-        $yml .= "- entity: \"block_content\"\r\n";
-        $yml .= "  type: \"{$d7_d9_block_theme_mapping[$blocktheme_id]}\"\r\n";
-        $yml .= "  info: \"{$block->info}\"\r\n";
-        $yml .= "  status: 1\r\n";
-        $yml .= "  body:\r\n";
-        $yml .= "    - format: \"{$block->format}\"\r\n";
-        $yml .= "      value: |\r\n";
-        $yml .= "        {$body}\r\n";
-        $yml .= "  field_region: \"" . $region->region . "\"\r\n";
-        $yml .= "  field_image:\r\n";
-        $yml .= "    - entity: \"media\"\r\n";
-        $yml .= "      bundle: \"image\"\r\n";
-        $yml .= "      name: \"{$img_name}\"\r\n";
-        $yml .= "      status: 1\r\n";
-        $yml .= "      field_media_image:\r\n";
-        $yml .= "        - '#process':\r\n";
-        $yml .= "            callback: 'file'\r\n";
-        $yml .= "            args:\r\n";
-        $yml .= "              - 'image'\r\n";
-        $yml .= "              - filename: '{$img_fname}'\r\n";
-        $yml .= "          alt: \"{$img_alt}\"\r\n";
+        $yml .= "- entity: \"block_content\"$nl";
+        $yml .= "  type: \"{$d7_d9_block_theme_mapping[$blocktheme_id]}\"$nl";
+        $yml .= "  uuid: \"{$uuid}\"$nl";
+        $yml .= "  info: \"{$block->info}\"$nl";
+        $yml .= "  status: 1$nl";
+        $yml .= "  body:$nl";
+        $yml .= "    - format: \"{$block->format}\"$nl";
+        $yml .= "      value: |$nl";
+        $yml .= "        {$body}$nl";
+        $yml .= "  field_region: \"" . $region->region . "\"$nl";
+        $yml .= "  field_image:$nl";
+        $yml .= "    - entity: \"media\"$nl";
+        $yml .= "      bundle: \"image\"$nl";
+        $yml .= "      name: \"{$img_name}\"$nl";
+        $yml .= "      status: 1$nl";
+        $yml .= "      field_media_image:$nl";
+        $yml .= "        - '#process':$nl";
+        $yml .= "            callback: 'file'$nl";
+        $yml .= "            args:$nl";
+        $yml .= "              - 'image'$nl";
+        $yml .= "              - filename: '{$img_fname}'$nl";
+        $yml .= "          alt: \"{$img_alt}\"$nl";
 
         if (in_array($d7_d9_block_theme_mapping[$blocktheme_id], $blocktypes_with_link_field)
           && isset($data['imageblock_link'])
           && migrate_is_valid_url($data['imageblock_link'])) {
-            $yml .= "  field_link:\r\n";
-            $yml .= "    - uri: 'public://" . ltrim($data['imageblock_link'], '/'). "'\r\n";
+            $yml .= "  field_link:$nl";
+            $yml .= "    - uri: 'public://" . ltrim($data['imageblock_link'], '/'). "'$nl";
 
             $title = $data['imageblock_title'] ?? '';
-            $yml .= "      title: \"{$title}\"\r\n";
+            $yml .= "      title: \"{$title}\"$nl";
 
             if ($data['imageblock_link_target'] != '_self') {
-              $yml .= "      options:\r\n";
-              $yml .= "        attributes:\r\n";
-              $yml .= "          target: '{$data['imageblock_link_target']}'\r\n";
+              $yml .= "      options:$nl";
+              $yml .= "        attributes:$nl";
+              $yml .= "          target: '{$data['imageblock_link_target']}'$nl";
             }
         }
 
-        $yml .= "\r\n";
+        $yml .= $nl;
+
+        $theme = 'bootstrap_hwwib9_2021';
+        $prefix = 'bootstrap_healthwatch_wib_2018_block_';
+        $config_yaml = [
+          'id' => $theme . '_' . $prefix . $i,
+          'uuid' => generate_uuid(),
+          'block_uuid' => $uuid,
+          'label' => $block->info,
+          'theme' => $theme,
+          'region' => $region->region,
+        ];
+        var_dump($config_yaml);
+        migrate_build_config_yaml('hw_contents/config/sync/', $config_yaml);
+        $i++;
       }
     }
     migrate_write_yaml('hw_contents/content/imageblocks.content.yml', $yml);
@@ -136,4 +187,39 @@ function migrate_copy_img($url, $base_dir) {
 
 function migrate_write_yaml($path, $content) {
   file_put_contents($path, $content);
+}
+
+function migrate_build_config_yaml($path, $config_yaml) {
+$yml = "uuid: " . $config_yaml['uuid'] . "
+langcode: en
+status: true
+dependencies:
+  content:
+    - 'block_content:basic:" . $config_yaml['block_uuid'] . "'
+  module:
+    - block_class
+    - block_content
+  theme:
+    - " . $config_yaml['theme'] . "
+third_party_settings:
+  block_class:
+    classes: " . $config_yaml['region'] . "
+id: " . $config_yaml['id'] . "_image
+theme: " . $config_yaml['theme'] . "
+region: " . $config_yaml['region'] . "
+weight: 0
+provider: null
+plugin: 'block_content:" . $config_yaml['block_uuid'] . "'
+settings:
+  id: 'block_content:" . $config_yaml['block_uuid'] . "'
+  label: '" . $config_yaml['label'] . "'
+  provider: block_content
+  label_display: '0'
+  status: true
+  info: ''
+  view_mode: full
+visibility: {  }";
+
+  $final_path = $path . 'block.block.' . $config_yaml['id'] . '_image.yml';
+  file_put_contents($final_path, $yml);
 }
