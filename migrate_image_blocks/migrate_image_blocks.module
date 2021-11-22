@@ -44,7 +44,7 @@ function generate_uuid() {
 function migrate_image_blocks_init() {
   $nl = "\r\n";
   $is_migrate = $_SERVER['QUERY_STRING'];
-  if ($is_migrate == 'migrate=1') {
+  if (strpos($is_migrate, 'migrate=1')) {
     $yml = '';
     $result = db_query('SELECT * FROM {imageblock} ORDER BY info');
     $blocktheme_query = db_query("SELECT value FROM {variable} WHERE name = 'blocktheme'")->fetchObject();
